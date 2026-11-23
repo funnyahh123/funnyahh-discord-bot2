@@ -396,7 +396,7 @@ async def setup_guild_layout(guild: discord.Guild, channel_name: str):
     stream = await ensure_category(guild, "LIVE & CONTENT")
     voice = await ensure_category(guild, "VOICE CHAT")
 
-    await ensure_text(guild, "welcome", welcome, "New members are greeted here.")
+    welcome_channel = await ensure_text(guild, "welcome", welcome, "New members are greeted here.")
     rules = await ensure_text(guild, "rules", welcome, "Read this before chatting.")
     await ensure_text(guild, "announcements", welcome, "Official updates from the creator.")
     await ensure_text(guild, "introductions", community, "Say hi and tell everyone what you like to watch.")
@@ -406,6 +406,10 @@ async def setup_guild_layout(guild: discord.Guild, channel_name: str):
     await ensure_text(guild, "suggestions", community, "Ideas for streams and the community.")
     await ensure_voice(guild, "Community Hangout", voice)
     await ensure_voice(guild, "Live Watch Party", voice)
+
+    # Keep the welcome section at the top, with #welcome as its first channel.
+    await welcome.edit(position=0, reason="Show the welcome channel first")
+    await welcome_channel.edit(position=0, reason="Show the welcome channel first")
 
     await ensure_role(guild, "Stream Team", discord.Colour.purple())
     moderator_role = await ensure_role(guild, "Moderator", discord.Colour.blue())
