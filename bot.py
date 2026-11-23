@@ -42,11 +42,26 @@ class StreamerBot(commands.Bot):
     async def setup_hook(self):
         await start_health_server()
         self.add_view(manage_panel_view)
+        print("Persistent management panel view registered.", flush=True)
         if not keep_render_awake.is_running():
             keep_render_awake.start()
 
 
 bot = StreamerBot(command_prefix="!", intents=intents)
+
+
+@bot.listen("on_interaction")
+async def trace_component_interaction(interaction: discord.Interaction):
+    if interaction.type is discord.InteractionType.component:
+        data = interaction.data or {}
+        print(
+            "Discord component interaction received: "
+            f"custom_id={data.get('custom_id', 'unknown')}; "
+            f"guild_id={interaction.guild_id}; message_id={interaction.message.id if interaction.message else 'unknown'}",
+            flush=True,
+        )
+
+
 _twitch_token = None
 _twitch_token_expires_at = 0
 _twitch_status = None
@@ -310,14 +325,14 @@ class ManagePanelView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         custom_id = (interaction.data or {}).get("custom_id", "unknown")
-        print(f"Management panel interaction: {custom_id}; user_id={interaction.user.id}; guild_id={interaction.guild_id}")
+        print(f"Management panel interaction: {custom_id}; user_id={interaction.user.id}; guild_id={interaction.guild_id}", flush=True)
         if can_manage_panel(interaction):
             return True
         await interaction.response.send_message("This control panel is for the server owner and moderators.", ephemeral=True)
         return False
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item):
-        print(f"Management panel error on {item.custom_id}: {error!r}")
+        print(f"Management panel error on {item.custom_id}: {error!r}", flush=True)
         message = "That control ran into an error. Check the bot logs for details."
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
