@@ -422,12 +422,17 @@ async def ensure_manage_panel(guild: discord.Guild, moderator_role: discord.Role
         color=discord.Colour.from_rgb(145, 70, 255),
     )
     panel_embed.set_footer(text="Only the server owner and moderators can use these controls.")
+    panel_message = None
     async for message in channel.history(limit=25):
         if message.author == bot.user and message.embeds and message.embeds[0].title == "Streamer Control Panel":
-            await message.edit(embed=panel_embed, view=manage_panel_view)
+            panel_message = await message.edit(embed=panel_embed, view=manage_panel_view)
             break
     else:
-        await channel.send(embed=panel_embed, view=manage_panel_view)
+        panel_message = await channel.send(embed=panel_embed, view=manage_panel_view)
+
+    # Bind this persistent view to the exact message so component dispatch survives restarts.
+    bot.add_view(manage_panel_view, message_id=panel_message.id)
+    print(f"Bound management controls to message_id={panel_message.id}.", flush=True)
 
     return channel
 
