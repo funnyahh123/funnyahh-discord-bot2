@@ -303,7 +303,8 @@ class ManagePanelView(discord.ui.View):
     async def rename_server_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_modal(RenameServerModal())
 
-    @discord.ui.channel_select(
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
         placeholder="Choose a text channel to rename",
         channel_types=[discord.ChannelType.text],
         min_values=1,
