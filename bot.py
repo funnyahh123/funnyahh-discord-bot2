@@ -384,6 +384,8 @@ async def ensure_manage_panel(guild: discord.Guild, moderator_role: discord.Role
     else:
         await channel.send(embed=panel_embed, view=manage_panel_view)
 
+    return channel
+
 
 async def setup_guild_layout(guild: discord.Guild, channel_name: str):
     slug = safe_slug(channel_name)
