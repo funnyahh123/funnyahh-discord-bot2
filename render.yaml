@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: funnyahh-discord-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /health
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: TWITCH_CLIENT_ID
+        sync: false
+      - key: TWITCH_CLIENT_SECRET
+        sync: false
+      - key: TWITCH_CHANNEL_LOGIN
+        sync: false
+      - key: TWITCH_ANNOUNCEMENT_CHANNEL_ID
+        sync: false
