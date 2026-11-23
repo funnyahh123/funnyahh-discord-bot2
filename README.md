@@ -10,9 +10,12 @@ It creates or reuses these categories and rooms:
 - **COMMUNITY**: `#introductions`, `#general-chat`, `#suggestions`
 - **LIVE & CONTENT**: `#clips-and-highlights`, `#stream-notifications`
 - **VOICE CHAT**: `Community Hangout`, `Live Watch Party`
+- **MANAGEMENT**: private `#manage` control panel, visible to the server owner and the `Moderator` role
 - Roles: `Stream Team`, `Moderator`, `VIP`, `Community`
 
 The setup command can be rerun; it reuses channels and roles with matching names. It does not delete existing content or assign roles. Review channel permissions and role access in Server Settings after setup.
+
+The private `#manage` panel has buttons to rename the server, choose and rename a text channel, and post a welcome-message preview. Assign the `Moderator` role to each trusted moderator in Server Settings > Roles / Members. Rerun `/setup_server` after updating the bot to create or refresh the panel. Discord's Administrator permission can bypass private-channel visibility, as usual.
 
 ## 1. Create a Discord application and bot
 

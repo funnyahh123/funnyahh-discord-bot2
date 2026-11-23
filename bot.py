@@ -41,6 +41,7 @@ async def start_health_server():
 class StreamerBot(commands.Bot):
     async def setup_hook(self):
         await start_health_server()
+        self.add_view(manage_panel_view)
         if not keep_render_awake.is_running():
             keep_render_awake.start()
 
@@ -212,6 +213,176 @@ async def ensure_role(guild: discord.Guild, name: str, color: discord.Colour) ->
     return existing or await guild.create_role(name=name, colour=color, reason="Streamer server setup")
 
 
+def management_overwrites(guild: discord.Guild, moderator_role: discord.Role) -> dict:
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        moderator_role: discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, read_message_history=True
+        ),
+    }
+    if guild.owner:
+        overwrites[guild.owner] = discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, read_message_history=True
+        )
+    if guild.me:
+        overwrites[guild.me] = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            manage_channels=True,
+            embed_links=True,
+        )
+    return overwrites
+
+
+def can_manage_panel(interaction: discord.Interaction) -> bool:
+    guild = interaction.guild
+    user = interaction.user
+    if guild is None or not isinstance(user, discord.Member):
+        return False
+    return (
+        user.id == guild.owner_id
+        or any(role.name.lower() == "moderator" for role in user.roles)
+    )
+
+
+class RenameServerModal(discord.ui.Modal, title="Rename this server"):
+    new_name = discord.ui.TextInput(label="New server name", max_length=100)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not can_manage_panel(interaction):
+            await interaction.response.send_message("Only the server owner and moderators can use this panel.", ephemeral=True)
+            return
+        if not interaction.guild or not interaction.guild.me or not interaction.guild.me.guild_permissions.manage_guild:
+            await interaction.response.send_message("I need the Manage Server permission to rename the server.", ephemeral=True)
+            return
+        name = str(self.new_name).strip()
+        if not name:
+            await interaction.response.send_message("Enter a server name.", ephemeral=True)
+            return
+        await interaction.guild.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        await interaction.response.send_message(f"Server renamed to **{interaction.guild.name}**.", ephemeral=True)
+
+
+class RenameChannelModal(discord.ui.Modal, title="Rename selected channel"):
+    new_name = discord.ui.TextInput(label="New channel name", max_length=100)
+
+    def __init__(self, channel_id: int):
+        super().__init__()
+        self.channel_id = channel_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not can_manage_panel(interaction):
+            await interaction.response.send_message("Only the server owner and moderators can use this panel.", ephemeral=True)
+            return
+        guild = interaction.guild
+        channel = guild.get_channel(self.channel_id) if guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Select a text channel from this server first.", ephemeral=True)
+            return
+        if not guild.me or not guild.me.guild_permissions.manage_channels:
+            await interaction.response.send_message("I need Manage Channels permission to rename that channel.", ephemeral=True)
+            return
+        name = safe_slug(str(self.new_name))
+        await channel.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        await interaction.response.send_message(f"Renamed the channel to {channel.mention}.", ephemeral=True)
+
+
+class ManagePanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.selected_channels: dict[int, int] = {}
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if can_manage_panel(interaction):
+            return True
+        await interaction.response.send_message("This control panel is for the server owner and moderators.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Rename server", style=discord.ButtonStyle.primary, custom_id="manage:rename_server", row=0)
+    async def rename_server_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.send_modal(RenameServerModal())
+
+    @discord.ui.channel_select(
+        placeholder="Choose a text channel to rename",
+        channel_types=[discord.ChannelType.text],
+        min_values=1,
+        max_values=1,
+        custom_id="manage:select_channel",
+        row=1,
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        self.selected_channels[interaction.user.id] = select.values[0].id
+        await interaction.response.send_message(f"Selected {select.values[0].mention}. Click **Rename selected channel** next.", ephemeral=True)
+
+    @discord.ui.button(label="Rename selected channel", style=discord.ButtonStyle.secondary, custom_id="manage:rename_channel", row=2)
+    async def rename_channel_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        channel_id = self.selected_channels.get(interaction.user.id)
+        if not channel_id:
+            await interaction.response.send_message("Choose a text channel in the menu above first.", ephemeral=True)
+            return
+        await interaction.response.send_modal(RenameChannelModal(channel_id))
+
+    @discord.ui.button(label="Welcome preview", style=discord.ButtonStyle.success, custom_id="manage:welcome_preview", row=2)
+    async def welcome_preview_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        guild = interaction.guild
+        channel = discord.utils.get(guild.text_channels, name="welcome") if guild else None
+        if channel is None:
+            await interaction.response.send_message("I couldn't find #welcome. Run /setup_server first.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=f"Welcome to {guild.name}!",
+            description="We’re glad you’re here. Get comfy, meet the community, and come hang out on stream!",
+            color=discord.Colour.from_rgb(145, 70, 255),
+        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_footer(text="Welcome message preview")
+        await channel.send(
+            f"👋 Welcome, {interaction.user.mention}! *(Preview)*",
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+        await interaction.response.send_message("Welcome preview posted in #welcome.", ephemeral=True)
+
+
+manage_panel_view = ManagePanelView()
+
+
+async def ensure_manage_panel(guild: discord.Guild, moderator_role: discord.Role):
+    overwrites = management_overwrites(guild, moderator_role)
+    category = discord.utils.get(guild.categories, name="MANAGEMENT")
+    if category is None:
+        category = await guild.create_category("MANAGEMENT", overwrites=overwrites, reason="Create private streamer controls")
+    else:
+        await category.edit(overwrites=overwrites, reason="Keep management controls private")
+
+    channel = discord.utils.get(guild.text_channels, name="manage")
+    if channel is None:
+        channel = await guild.create_text_channel(
+            "manage", category=category, overwrites=overwrites,
+            topic="Private controls for the server owner and moderators.",
+            reason="Create private streamer management panel",
+        )
+    else:
+        await channel.edit(category=category, overwrites=overwrites, sync_permissions=False, reason="Keep management controls private")
+
+    panel_embed = discord.Embed(
+        title="Streamer Control Panel",
+        description=(
+            "Use the controls below to manage this server. This channel is private to the server owner and the **Moderator** role.\n\n"
+            "• Rename the server\n• Pick and rename a text channel\n• Post a welcome preview to #welcome"
+        ),
+        color=discord.Colour.from_rgb(145, 70, 255),
+    )
+    panel_embed.set_footer(text="Only the server owner and moderators can use these controls.")
+    async for message in channel.history(limit=25):
+        if message.author == bot.user and message.embeds and message.embeds[0].title == "Streamer Control Panel":
+            await message.edit(embed=panel_embed, view=manage_panel_view)
+            break
+    else:
+        await channel.send(embed=panel_embed, view=manage_panel_view)
+
+
 @bot.event
 async def on_ready():
     try:
@@ -289,16 +460,18 @@ async def setup_server(interaction: discord.Interaction, channel_name: str):
     await ensure_voice(guild, "Live Watch Party", voice)
 
     await ensure_role(guild, "Stream Team", discord.Colour.purple())
-    await ensure_role(guild, "Moderator", discord.Colour.blue())
+    moderator_role = await ensure_role(guild, "Moderator", discord.Colour.blue())
     await ensure_role(guild, "VIP", discord.Colour.gold())
     await ensure_role(guild, "Community", discord.Colour.teal())
+    manage_channel = await ensure_manage_panel(guild, moderator_role)
 
     if not rules.topic or rules.topic == "Read this before chatting.":
         await rules.edit(topic=f"Welcome to {channel_name}'s community. Be kind, keep it respectful, and follow Discord's rules.")
 
     await interaction.followup.send(
         f"Starter layout is ready for **{channel_name}** in **{guild.name}**.\n"
-        f"Created/reused the welcome, community, live content, and voice sections, plus starter roles.\n"
+        f"Created/reused the welcome, community, live content, voice, and private management sections, plus starter roles.\n"
+        f"Your owner/mod-only control panel is in {manage_channel.mention}.\n"
         f"Suggested invite or channel slug: `/{slug}`. You can customize names, rules, and permissions in Server Settings.",
         ephemeral=True,
     )
