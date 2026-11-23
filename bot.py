@@ -54,12 +54,66 @@ bot = StreamerBot(command_prefix="!", intents=intents)
 async def trace_component_interaction(interaction: discord.Interaction):
     if interaction.type is discord.InteractionType.component:
         data = interaction.data or {}
+        custom_id = data.get("custom_id", "unknown")
         print(
             "Discord component interaction received: "
-            f"custom_id={data.get('custom_id', 'unknown')}; "
+            f"custom_id={custom_id}; "
             f"guild_id={interaction.guild_id}; message_id={interaction.message.id if interaction.message else 'unknown'}",
             flush=True,
         )
+        # discord.py's persistent-view dispatch is missing these message components in
+        # some deployments, so route the stable custom IDs here as a fallback.
+        if interaction.response.is_done():
+            return
+        if not can_manage_panel(interaction):
+            await interaction.response.send_message("This control panel is for the server owner and moderators.", ephemeral=True)
+            return
+
+        if custom_id == "manage:rename_server":
+            await interaction.response.send_modal(RenameServerModal())
+        elif custom_id == "manage:select_channel":
+            values = data.get("values", [])
+            if not values:
+                await interaction.response.send_message("Choose a text channel first.", ephemeral=True)
+                return
+            selected_channel_id = int(values[0])
+            _panel_selected_channels[interaction.user.id] = selected_channel_id
+            channel = interaction.guild.get_channel(selected_channel_id) if interaction.guild else None
+            await interaction.response.send_message(
+                f"Selected {channel.mention if channel else 'that channel'}. Click **Rename selected channel** next.",
+                ephemeral=True,
+            )
+        elif custom_id == "manage:rename_channel":
+            selected_channel_id = _panel_selected_channels.get(interaction.user.id)
+            if not selected_channel_id:
+                await interaction.response.send_message("Choose a text channel in the menu above first.", ephemeral=True)
+                return
+            await interaction.response.send_modal(RenameChannelModal(selected_channel_id))
+        elif custom_id == "manage:welcome_preview":
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            guild = interaction.guild
+            channel = discord.utils.get(guild.text_channels, name="welcome") if guild else None
+            if channel is None:
+                await interaction.followup.send("I couldn't find #welcome. Run /setup_server first.", ephemeral=True)
+                return
+            embed = discord.Embed(
+                title=f"Welcome to {guild.name}!",
+                description="We’re glad you’re here. Get comfy, meet the community, and come hang out on stream!",
+                color=discord.Colour.from_rgb(145, 70, 255),
+            )
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_footer(text="Welcome message preview")
+            try:
+                await channel.send(
+                    f"👋 Welcome, {interaction.user.mention}! *(Preview)*",
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+                )
+            except discord.HTTPException as exc:
+                print(f"Welcome preview failed in channel_id={channel.id}: {exc!r}", flush=True)
+                await interaction.followup.send("I couldn't post in #welcome. Check the bot's channel permissions.", ephemeral=True)
+                return
+            await interaction.followup.send("Welcome preview posted in #welcome.", ephemeral=True)
 
 
 _twitch_token = None
@@ -67,6 +121,7 @@ _twitch_token_expires_at = 0
 _twitch_status = None
 _twitch_config_warning_logged = False
 _auto_setup_done: set[int] = set()
+_panel_selected_channels: dict[int, int] = {}
 
 
 async def get_twitch_token(session: aiohttp.ClientSession) -> str:
