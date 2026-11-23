@@ -51,6 +51,7 @@ _twitch_token = None
 _twitch_token_expires_at = 0
 _twitch_status = None
 _twitch_config_warning_logged = False
+_auto_setup_done: set[int] = set()
 
 
 async def get_twitch_token(session: aiohttp.ClientSession) -> str:
@@ -384,11 +385,56 @@ async def ensure_manage_panel(guild: discord.Guild, moderator_role: discord.Role
         await channel.send(embed=panel_embed, view=manage_panel_view)
 
 
+async def setup_guild_layout(guild: discord.Guild, channel_name: str):
+    slug = safe_slug(channel_name)
+
+    # Reuse existing named categories/channels and roles, so startup setup is safe to repeat.
+    welcome = await ensure_category(guild, "WELCOME")
+    community = await ensure_category(guild, "COMMUNITY")
+    stream = await ensure_category(guild, "LIVE & CONTENT")
+    voice = await ensure_category(guild, "VOICE CHAT")
+
+    await ensure_text(guild, "welcome", welcome, "New members are greeted here.")
+    rules = await ensure_text(guild, "rules", welcome, "Read this before chatting.")
+    await ensure_text(guild, "announcements", welcome, "Official updates from the creator.")
+    await ensure_text(guild, "introductions", community, "Say hi and tell everyone what you like to watch.")
+    await ensure_text(guild, "general-chat", community, "Chat with the community.")
+    await ensure_text(guild, "clips-and-highlights", stream, "Share your favorite stream moments.")
+    await ensure_text(guild, "stream-notifications", stream, "Go-live alerts and stream schedules.")
+    await ensure_text(guild, "suggestions", community, "Ideas for streams and the community.")
+    await ensure_voice(guild, "Community Hangout", voice)
+    await ensure_voice(guild, "Live Watch Party", voice)
+
+    await ensure_role(guild, "Stream Team", discord.Colour.purple())
+    moderator_role = await ensure_role(guild, "Moderator", discord.Colour.blue())
+    await ensure_role(guild, "VIP", discord.Colour.gold())
+    await ensure_role(guild, "Community", discord.Colour.teal())
+    manage_channel = await ensure_manage_panel(guild, moderator_role)
+
+    if not rules.topic or rules.topic == "Read this before chatting.":
+        await rules.edit(topic=f"Welcome to {channel_name}'s community. Be kind, keep it respectful, and follow Discord's rules.")
+
+    return manage_channel, slug
+
+
 @bot.event
 async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Logged in as {bot.user}; synced {len(synced)} slash command(s).")
+        if len(bot.guilds) == 1 and bot.guilds[0].id not in _auto_setup_done:
+            guild = bot.guilds[0]
+            channel_name = TWITCH_CHANNEL_LOGIN or guild.name
+            try:
+                manage_channel, _slug = await setup_guild_layout(guild, channel_name)
+                _auto_setup_done.add(guild.id)
+                print(f"Automatic streamer setup completed in {guild.name}; controls: #{manage_channel.name}.")
+            except discord.Forbidden as exc:
+                print(f"Automatic setup needs more bot permissions in {guild.name}: {exc}")
+            except discord.HTTPException as exc:
+                print(f"Automatic setup failed in {guild.name}: {exc}")
+        elif len(bot.guilds) > 1:
+            print("Automatic setup skipped because the bot is in multiple servers; use /setup_server in the intended server.")
         if not check_twitch_live.is_running():
             check_twitch_live.start()
     except discord.HTTPException as exc:
@@ -441,33 +487,7 @@ async def setup_server(interaction: discord.Interaction, channel_name: str):
         return
 
     await interaction.response.defer(ephemeral=True, thinking=True)
-    slug = safe_slug(channel_name)
-
-    # Reuse existing named categories/channels and roles, so rerunning setup is safe.
-    welcome = await ensure_category(guild, "WELCOME")
-    community = await ensure_category(guild, "COMMUNITY")
-    stream = await ensure_category(guild, "LIVE & CONTENT")
-    voice = await ensure_category(guild, "VOICE CHAT")
-
-    await ensure_text(guild, "welcome", welcome, "New members are greeted here.")
-    rules = await ensure_text(guild, "rules", welcome, "Read this before chatting.")
-    await ensure_text(guild, "announcements", welcome, "Official updates from the creator.")
-    await ensure_text(guild, "introductions", community, "Say hi and tell everyone what you like to watch.")
-    await ensure_text(guild, "general-chat", community, "Chat with the community.")
-    await ensure_text(guild, "clips-and-highlights", stream, "Share your favorite stream moments.")
-    await ensure_text(guild, "stream-notifications", stream, "Go-live alerts and stream schedules.")
-    await ensure_text(guild, "suggestions", community, "Ideas for streams and the community.")
-    await ensure_voice(guild, "Community Hangout", voice)
-    await ensure_voice(guild, "Live Watch Party", voice)
-
-    await ensure_role(guild, "Stream Team", discord.Colour.purple())
-    moderator_role = await ensure_role(guild, "Moderator", discord.Colour.blue())
-    await ensure_role(guild, "VIP", discord.Colour.gold())
-    await ensure_role(guild, "Community", discord.Colour.teal())
-    manage_channel = await ensure_manage_panel(guild, moderator_role)
-
-    if not rules.topic or rules.topic == "Read this before chatting.":
-        await rules.edit(topic=f"Welcome to {channel_name}'s community. Be kind, keep it respectful, and follow Discord's rules.")
+    manage_channel, slug = await setup_guild_layout(guild, channel_name)
 
     await interaction.followup.send(
         f"Starter layout is ready for **{channel_name}** in **{guild.name}**.\n"

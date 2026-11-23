@@ -48,7 +48,7 @@ Keep the process running while you use the bot. Slash commands may take a short 
 
 ## 3. Set up the server
 
-In your server, run `/setup_server` and enter your channel or creator name. You need **Manage Server** permission. Customize the rules, channel descriptions, and who can view or post in each channel after setup.
+When the bot starts and is in exactly one server, it automatically creates or reuses the streamer layout. It uses your `TWITCH_CHANNEL_LOGIN` as the creator name, or the server name if Twitch is not configured. If the bot is in multiple servers, run `/setup_server` in the intended server and enter your channel or creator name. You need **Manage Server** permission for that command. Customize rules, channel descriptions, and role access in Server Settings.
 
 The setup creates `#welcome`. When someone joins, the bot posts a purple welcome card with links to `#rules` and `#introductions`. To enable join greetings, open the [Discord Developer Portal](https://discord.com/developers/applications), select your application, open **Bot**, and turn on **Server Members Intent** under **Privileged Gateway Intents**. Save the setting, restart the bot, and rerun `/setup_server` once to create the welcome channel. The bot must have **View Channel**, **Send Messages**, and **Embed Links** in `#welcome`, and it must be online when someone joins.
 
