@@ -261,8 +261,9 @@ class RenameServerModal(discord.ui.Modal, title="Rename this server"):
         if not name:
             await interaction.response.send_message("Enter a server name.", ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True, thinking=True)
         await interaction.guild.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
-        await interaction.response.send_message(f"Server renamed to **{interaction.guild.name}**.", ephemeral=True)
+        await interaction.followup.send(f"Server renamed to **{interaction.guild.name}**.", ephemeral=True)
 
 
 class RenameChannelModal(discord.ui.Modal, title="Rename selected channel"):
@@ -285,8 +286,9 @@ class RenameChannelModal(discord.ui.Modal, title="Rename selected channel"):
             await interaction.response.send_message("I need Manage Channels permission to rename that channel.", ephemeral=True)
             return
         name = safe_slug(str(self.new_name))
+        await interaction.response.defer(ephemeral=True, thinking=True)
         await channel.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
-        await interaction.response.send_message(f"Renamed the channel to {channel.mention}.", ephemeral=True)
+        await interaction.followup.send(f"Renamed the channel to {channel.mention}.", ephemeral=True)
 
 
 class ManagePanelView(discord.ui.View):
@@ -339,12 +341,13 @@ class ManagePanelView(discord.ui.View):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_footer(text="Welcome message preview")
+        await interaction.response.defer(ephemeral=True, thinking=True)
         await channel.send(
             f"👋 Welcome, {interaction.user.mention}! *(Preview)*",
             embed=embed,
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
-        await interaction.response.send_message("Welcome preview posted in #welcome.", ephemeral=True)
+        await interaction.followup.send("Welcome preview posted in #welcome.", ephemeral=True)
 
 
 manage_panel_view = ManagePanelView()
