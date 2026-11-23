@@ -261,8 +261,14 @@ class RenameServerModal(discord.ui.Modal, title="Rename this server"):
         if not name:
             await interaction.response.send_message("Enter a server name.", ephemeral=True)
             return
+        print(f"Rename server submitted; user_id={interaction.user.id}; guild_id={interaction.guild_id}")
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await interaction.guild.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        try:
+            await interaction.guild.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        except discord.HTTPException as exc:
+            print(f"Rename server failed: {exc!r}")
+            await interaction.followup.send("I couldn't rename the server. Check that I have Manage Server permission.", ephemeral=True)
+            return
         await interaction.followup.send(f"Server renamed to **{interaction.guild.name}**.", ephemeral=True)
 
 
@@ -286,8 +292,14 @@ class RenameChannelModal(discord.ui.Modal, title="Rename selected channel"):
             await interaction.response.send_message("I need Manage Channels permission to rename that channel.", ephemeral=True)
             return
         name = safe_slug(str(self.new_name))
+        print(f"Rename channel submitted; channel_id={channel.id}; user_id={interaction.user.id}; guild_id={interaction.guild_id}")
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await channel.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        try:
+            await channel.edit(name=name, reason=f"Renamed through management panel by {interaction.user}")
+        except discord.HTTPException as exc:
+            print(f"Rename channel failed: {exc!r}")
+            await interaction.followup.send("I couldn't rename that channel. Check that I have Manage Channels permission.", ephemeral=True)
+            return
         await interaction.followup.send(f"Renamed the channel to {channel.mention}.", ephemeral=True)
 
 
@@ -297,10 +309,20 @@ class ManagePanelView(discord.ui.View):
         self.selected_channels: dict[int, int] = {}
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        custom_id = (interaction.data or {}).get("custom_id", "unknown")
+        print(f"Management panel interaction: {custom_id}; user_id={interaction.user.id}; guild_id={interaction.guild_id}")
         if can_manage_panel(interaction):
             return True
         await interaction.response.send_message("This control panel is for the server owner and moderators.", ephemeral=True)
         return False
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item):
+        print(f"Management panel error on {item.custom_id}: {error!r}")
+        message = "That control ran into an error. Check the bot logs for details."
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
 
     @discord.ui.button(label="Rename server", style=discord.ButtonStyle.primary, custom_id="manage:rename_server", row=0)
     async def rename_server_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
@@ -329,10 +351,11 @@ class ManagePanelView(discord.ui.View):
 
     @discord.ui.button(label="Welcome preview", style=discord.ButtonStyle.success, custom_id="manage:welcome_preview", row=2)
     async def welcome_preview_button(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
         guild = interaction.guild
         channel = discord.utils.get(guild.text_channels, name="welcome") if guild else None
         if channel is None:
-            await interaction.response.send_message("I couldn't find #welcome. Run /setup_server first.", ephemeral=True)
+            await interaction.followup.send("I couldn't find #welcome. Run /setup_server first.", ephemeral=True)
             return
         embed = discord.Embed(
             title=f"Welcome to {guild.name}!",
@@ -341,12 +364,16 @@ class ManagePanelView(discord.ui.View):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_footer(text="Welcome message preview")
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        await channel.send(
-            f"👋 Welcome, {interaction.user.mention}! *(Preview)*",
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
-        )
+        try:
+            await channel.send(
+                f"👋 Welcome, {interaction.user.mention}! *(Preview)*",
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+            )
+        except discord.HTTPException as exc:
+            print(f"Welcome preview failed in channel_id={channel.id}: {exc!r}")
+            await interaction.followup.send("I couldn't post in #welcome. Check the bot's channel permissions.", ephemeral=True)
+            return
         await interaction.followup.send("Welcome preview posted in #welcome.", ephemeral=True)
 
 
