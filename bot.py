@@ -588,15 +588,16 @@ async def on_member_join(member: discord.Member):
 
 
 @bot.tree.command(name="setup_server", description="Create a starter streaming community layout")
-@app_commands.describe(channel_name="Your streaming channel or creator name")
+@app_commands.describe(channel_name="Optional creator name; defaults to this server's name")
 @app_commands.checks.has_permissions(manage_guild=True)
 @app_commands.checks.bot_has_permissions(manage_channels=True, manage_roles=True, send_messages=True)
-async def setup_server(interaction: discord.Interaction, channel_name: str):
+async def setup_server(interaction: discord.Interaction, channel_name: str | None = None):
     guild = interaction.guild
     if guild is None:
         await interaction.response.send_message("Run this command inside your server.", ephemeral=True)
         return
 
+    channel_name = (channel_name or guild.name).strip() or guild.name
     await interaction.response.defer(ephemeral=True, thinking=True)
     manage_channel, slug = await setup_guild_layout(guild, channel_name)
 
